@@ -3,6 +3,12 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# specstory
+.specstory/
+
+# databricks
+.databricks/
+
 # C extensions
 *.so
 

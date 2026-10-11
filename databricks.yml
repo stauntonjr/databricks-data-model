@@ -1,0 +1,22 @@
+bundle:
+  name: databricks-data-model
+
+include:
+  - resources/*.job.yml
+
+variables:
+  warehouse_id:
+    description: SQL warehouse for the interview notebooks
+    default: c4e143f298ef3ad6
+
+sync:
+  exclude:
+    - .specstory/**
+    - "*.code-workspace"
+
+targets:
+  dev:
+    default: true
+    mode: development
+    workspace:
+      host: https://dbc-03f0b4af-9591.cloud.databricks.com

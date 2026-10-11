@@ -1,0 +1,40 @@
+resources:
+  jobs:
+    customer_orders:
+      name: customer-orders
+      max_concurrent_runs: 1
+      tasks:
+        - task_key: create_schema
+          notebook_task:
+            notebook_path: ../sql/01_schema.sql
+            warehouse_id: ${var.warehouse_id}
+        - task_key: load_sample_data
+          depends_on:
+            - task_key: create_schema
+          notebook_task:
+            notebook_path: ../sql/02_sample_data.sql
+            warehouse_id: ${var.warehouse_id}
+        - task_key: create_order_status
+          depends_on:
+            - task_key: load_sample_data
+          notebook_task:
+            notebook_path: ../sql/03_order_status.sql
+            warehouse_id: ${var.warehouse_id}
+        - task_key: create_sales_reporting
+          depends_on:
+            - task_key: create_order_status
+          notebook_task:
+            notebook_path: ../sql/04_sales_reporting.sql
+            warehouse_id: ${var.warehouse_id}
+        - task_key: validate
+          depends_on:
+            - task_key: create_sales_reporting
+          notebook_task:
+            notebook_path: ../sql/05_validation.sql
+            warehouse_id: ${var.warehouse_id}
+        - task_key: show_results
+          depends_on:
+            - task_key: validate
+          notebook_task:
+            notebook_path: ../sql/06_queries.sql
+            warehouse_id: ${var.warehouse_id}
