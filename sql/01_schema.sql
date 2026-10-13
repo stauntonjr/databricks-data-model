@@ -83,3 +83,23 @@ COMMENT ON TABLE workspace.interview_orders.orders IS '**Type:** Managed Delta t
 
 COMMENT ON TABLE workspace.interview_orders.order_items IS '**Type:** Managed Delta table. Order lines joining orders to products, with quantity, purchase-time unit_price, line_status and delivery/cancellation timestamps; one status applies to each full line quantity. **Constraints:** informational composite PRIMARY KEY (order_id, line_number); informational FOREIGN KEY (order_id) REFERENCES orders and FOREIGN KEY (product_id) REFERENCES products; enforced NOT NULL on order_id, line_number, product_id, quantity, unit_price, line_status. Enforced CHECK valid_item requires positive line_number and quantity, nonnegative price, status in Pending/Shipped/Delivered/Cancelled, delivered_at exactly for Delivered and cancelled_at exactly for Cancelled. Additional SQL assertions validate uniqueness, references and event chronology.';
 
+
+-- COMMAND ----------
+-- Column metadata; rerunnable for existing managed Delta tables.
+ALTER TABLE workspace.interview_orders.customers ALTER COLUMN customer_id COMMENT 'Unique customer identifier; informational primary key; NOT NULL.';
+ALTER TABLE workspace.interview_orders.customers ALTER COLUMN name COMMENT 'Customer display name; NOT NULL.';
+ALTER TABLE workspace.interview_orders.products ALTER COLUMN product_id COMMENT 'Unique product identifier; informational primary key; NOT NULL.';
+ALTER TABLE workspace.interview_orders.products ALTER COLUMN name COMMENT 'Product display name; NOT NULL.';
+ALTER TABLE workspace.interview_orders.products ALTER COLUMN category COMMENT 'Product grouping for classification and reporting; NOT NULL.';
+ALTER TABLE workspace.interview_orders.products ALTER COLUMN current_unit_price COMMENT 'Current catalog unit price in currency units; DECIMAL(10,2), NOT NULL; nonnegative value checked by validation SQL.';
+ALTER TABLE workspace.interview_orders.orders ALTER COLUMN order_id COMMENT 'Unique order identifier; informational primary key; NOT NULL.';
+ALTER TABLE workspace.interview_orders.orders ALTER COLUMN customer_id COMMENT 'Customer placing this order; informational foreign key to customers.customer_id; NOT NULL.';
+ALTER TABLE workspace.interview_orders.orders ALTER COLUMN ordered_at COMMENT 'Order placement timestamp, TIMESTAMP_NTZ using UTC convention; used in ordered-unit reporting; NOT NULL.';
+ALTER TABLE workspace.interview_orders.order_items ALTER COLUMN order_id COMMENT 'Parent order identifier; part of informational composite primary key and foreign key to orders; NOT NULL.';
+ALTER TABLE workspace.interview_orders.order_items ALTER COLUMN line_number COMMENT 'Positive line number within an order; part of informational composite primary key; NOT NULL and CHECK > 0.';
+ALTER TABLE workspace.interview_orders.order_items ALTER COLUMN product_id COMMENT 'Ordered product; informational foreign key to products.product_id; NOT NULL.';
+ALTER TABLE workspace.interview_orders.order_items ALTER COLUMN quantity COMMENT 'Units on this line; positive integer enforced by CHECK; NOT NULL.';
+ALTER TABLE workspace.interview_orders.order_items ALTER COLUMN unit_price COMMENT 'Price per unit at purchase, retained independently from current product price; DECIMAL(10,2), nonnegative; NOT NULL.';
+ALTER TABLE workspace.interview_orders.order_items ALTER COLUMN line_status COMMENT 'Current whole-line fulfillment state: Pending, Shipped, Delivered or Cancelled; CHECK-restricted; NOT NULL.';
+ALTER TABLE workspace.interview_orders.order_items ALTER COLUMN delivered_at COMMENT 'Delivery event timestamp in UTC convention; required exactly when line_status = Delivered, otherwise NULL.';
+ALTER TABLE workspace.interview_orders.order_items ALTER COLUMN cancelled_at COMMENT 'Cancellation event timestamp in UTC convention; required exactly when line_status = Cancelled, otherwise NULL.';
