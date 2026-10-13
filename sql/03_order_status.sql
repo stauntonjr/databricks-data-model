@@ -10,7 +10,14 @@
 SET TIME ZONE 'UTC';
 
 -- COMMAND ----------
-CREATE OR REPLACE VIEW workspace.interview_orders.order_status AS
+CREATE OR REPLACE VIEW workspace.interview_orders.order_status (
+  order_id COMMENT 'Order identifier; logically one row per order.',
+  customer_id COMMENT 'Customer identifier from the order header.',
+  ordered_at COMMENT 'Order placement timestamp (UTC convention).',
+  item_count COMMENT 'Number of order lines, including cancelled lines.',
+  order_status COMMENT 'Derived state: Pending, InProgress, Completed or Cancelled based on all lines.',
+  completed_at COMMENT 'Latest resolving delivery or cancellation timestamp when Completed; otherwise NULL.'
+) AS
 WITH item_summary AS (
   SELECT
     o.order_id,
@@ -52,3 +59,6 @@ SELECT
     -- With no ELSE, unfinished orders also return NULL.
   END AS completed_at
 FROM item_summary;
+
+-- COMMAND ----------
+COMMENT ON TABLE workspace.interview_orders.order_status IS '**Type:** Non-materialized SQL view. Derives one row per order by LEFT JOIN and conditional aggregation of line items; includes empty orders. **Constraints:** no independently declared PK, FK, NOT NULL or CHECK constraints; logical uniqueness by order_id relies on valid base keys. **Rules:** Pending for empty orders or unresolved active lines all pending; Cancelled if all lines cancelled; Completed if at least one delivered and all remaining delivered/cancelled; otherwise InProgress. completed_at is set only on Completed and is the last resolving delivery/cancellation timestamp. SQL assertions validate states and completion chronology.';
