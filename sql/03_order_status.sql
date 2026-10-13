@@ -10,7 +10,14 @@
 SET TIME ZONE 'UTC';
 
 -- COMMAND ----------
-CREATE OR REPLACE VIEW workspace.interview_orders.order_status AS
+CREATE OR REPLACE VIEW workspace.interview_orders.order_status (
+  order_id COMMENT 'Order identifier; logically one row per order.',
+  customer_id COMMENT 'Customer identifier from the order header.',
+  ordered_at COMMENT 'Order placement timestamp (UTC convention).',
+  item_count COMMENT 'Number of order lines, including cancelled lines.',
+  order_status COMMENT 'Derived state: Pending, InProgress, Completed or Cancelled based on all lines.',
+  completed_at COMMENT 'Latest resolving delivery or cancellation timestamp when Completed; otherwise NULL.'
+) AS
 WITH item_summary AS (
   SELECT
     o.order_id,
