@@ -72,3 +72,14 @@ ALTER TABLE workspace.interview_orders.order_items ADD CONSTRAINT valid_item CHE
   AND ((line_status = 'Cancelled' AND cancelled_at IS NOT NULL)
     OR (line_status <> 'Cancelled' AND cancelled_at IS NULL))
 );
+
+-- COMMAND ----------
+-- Managed table descriptions for Unity Catalog Catalog Explorer.
+COMMENT ON TABLE workspace.interview_orders.customers IS '**Type:** Managed Delta table. Customer master records; each customer can place many orders. **Columns:** customer_id, name. **Constraints:** informational PRIMARY KEY (customer_id); enforced NOT NULL on customer_id and name; no foreign key or CHECK constraints. SQL validation checks customer_id uniqueness; orders.customer_id is validated against this table. Unity Catalog primary keys are not enforced.';
+
+COMMENT ON TABLE workspace.interview_orders.products IS '**Type:** Managed Delta table. Product catalog containing product_id, name, category and current_unit_price. Purchase-time pricing is independently captured in order_items.unit_price. **Constraints:** informational PRIMARY KEY (product_id); enforced NOT NULL on all four columns; no foreign key or CHECK constraints. SQL validation checks uniqueness and nonnegative current_unit_price and verifies references from order_items.';
+
+COMMENT ON TABLE workspace.interview_orders.orders IS '**Type:** Managed Delta table. Order headers with order_id, customer_id and ordered_at (TIMESTAMP_NTZ; UTC convention). Each customer has many orders; line items track products and fulfillment. **Constraints:** informational PRIMARY KEY (order_id), informational FOREIGN KEY (customer_id) REFERENCES customers(customer_id), enforced NOT NULL on all three columns; no CHECK constraints. SQL validation checks uniqueness and customer references; order-level status is derived in the order_status view.';
+
+COMMENT ON TABLE workspace.interview_orders.order_items IS '**Type:** Managed Delta table. Order lines joining orders to products, with quantity, purchase-time unit_price, line_status and delivery/cancellation timestamps; one status applies to each full line quantity. **Constraints:** informational composite PRIMARY KEY (order_id, line_number); informational FOREIGN KEY (order_id) REFERENCES orders and FOREIGN KEY (product_id) REFERENCES products; enforced NOT NULL on order_id, line_number, product_id, quantity, unit_price, line_status. Enforced CHECK valid_item requires positive line_number and quantity, nonnegative price, status in Pending/Shipped/Delivered/Cancelled, delivered_at exactly for Delivered and cancelled_at exactly for Cancelled. Additional SQL assertions validate uniqueness, references and event chronology.';
+
