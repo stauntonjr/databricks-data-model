@@ -2,7 +2,7 @@
 -- MAGIC %md
 -- MAGIC # Sales reporting functions and views
 -- MAGIC
--- MAGIC Requires the four tables. Defines reusable window and product-ranking functions plus the last-month convenience views.
+-- MAGIC Requires the four tables. Defines reusable window and product-ranking functions plus convenience views for last month and the previous 30 complete days.
 -- MAGIC
 -- MAGIC **Reporting windows:** `last_calendar_month` is the preceding full calendar month. `previous_30_days` is the 30 complete UTC days before `as_of_date`, excluding that date. Both use an inclusive start and exclusive end. Pass `current_date()` for today or a fixed date for reproducible analysis. The date controls the reporting window, not historical cancellation state.
 -- MAGIC
@@ -67,6 +67,11 @@ CREATE OR REPLACE VIEW workspace.interview_orders.most_sold_last_month AS
 SELECT * FROM workspace.interview_orders.most_sold_products('last_calendar_month', current_date());
 
 -- COMMAND ----------
+-- Rolling window: the 30 complete days before today, excluding today.
+CREATE OR REPLACE VIEW workspace.interview_orders.most_sold_previous_30 AS
+SELECT * FROM workspace.interview_orders.most_sold_products('previous_30_days', current_date());
+
+-- COMMAND ----------
 -- Alternative business definition: units delivered in the selected window, regardless
 -- of order date or whether other lines in the order have been delivered.
 CREATE OR REPLACE FUNCTION workspace.interview_orders.most_delivered_products(
@@ -96,3 +101,8 @@ WHERE r.sales_rank = 1;
 -- COMMAND ----------
 CREATE OR REPLACE VIEW workspace.interview_orders.most_delivered_last_month AS
 SELECT * FROM workspace.interview_orders.most_delivered_products('last_calendar_month', current_date());
+
+-- COMMAND ----------
+-- Uses delivery timestamps within the same rolling 30-day window.
+CREATE OR REPLACE VIEW workspace.interview_orders.most_delivered_previous_30 AS
+SELECT * FROM workspace.interview_orders.most_delivered_products('previous_30_days', current_date());

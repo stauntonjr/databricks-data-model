@@ -18,12 +18,10 @@ SELECT * FROM workspace.interview_orders.order_status ORDER BY order_id;
 SELECT * FROM workspace.interview_orders.most_sold_last_month ORDER BY product_id;
 
 -- COMMAND ----------
-SELECT * FROM workspace.interview_orders.most_sold_products('previous_30_days', current_date())
-ORDER BY product_id;
+SELECT * FROM workspace.interview_orders.most_sold_previous_30 ORDER BY product_id;
 
 -- COMMAND ----------
 SELECT * FROM workspace.interview_orders.most_delivered_last_month ORDER BY product_id;
 
 -- COMMAND ----------
-SELECT * FROM workspace.interview_orders.most_delivered_products('previous_30_days', current_date())
-ORDER BY product_id;
+SELECT * FROM workspace.interview_orders.most_delivered_previous_30 ORDER BY product_id;
