@@ -1,19 +1,24 @@
 bundle:
   name: databricks-data-model
 
+# Load the workflow resource definition alongside this deployment configuration.
 include:
   - resources/*.job.yml
 
+# All notebook tasks use this SQL warehouse; override the variable for another workspace.
 variables:
   warehouse_id:
     description: SQL warehouse for the interview notebooks
     default: c4e143f298ef3ad6
 
+# Keep local conversation history and editor workspace metadata out of bundle sync.
 sync:
   exclude:
     - .specstory/**
     - "*.code-workspace"
 
+# The default deployment target selects the workspace; SQL object names remain
+# explicitly workspace.interview_orders in the notebooks, independent of this target name.
 targets:
   dev:
     default: true

@@ -10,10 +10,13 @@
 SET TIME ZONE 'UTC';
 
 -- COMMAND ----------
+-- Replace each table independently so reruns do not append duplicate fixtures.
+-- The four writes are not one transaction; run the full job to restore a coherent set.
 INSERT OVERWRITE workspace.interview_orders.customers VALUES
   (1, 'Alex Chen'), (2, 'Sam Rivera'), (3, 'Morgan Patel');
 
 -- COMMAND ----------
+-- Catalog prices deliberately differ from the historical prices on order lines.
 INSERT OVERWRITE workspace.interview_orders.products VALUES
   (1, 'Sourdough loaf', 'Bread', 7.50),
   (2, 'Butter croissant', 'Pastry', 4.50),
@@ -22,6 +25,9 @@ INSERT OVERWRITE workspace.interview_orders.products VALUES
 -- COMMAND ----------
 -- Offsets are measured from the first day of a month:
 -- month_offset = -1 means last month; 0 means this month.
+-- day_offset is zero-based. Add seconds last to place records exactly on either
+-- side of midnight without depending on the number of days in the month.
+-- These are analytical fixtures, not a simulation of real delivery durations.
 INSERT OVERWRITE workspace.interview_orders.orders (order_id, customer_id, ordered_at)
 WITH sample_orders(order_id, customer_id, month_offset, day_offset, second_offset) AS (
   VALUES
@@ -49,6 +55,12 @@ SELECT
 FROM sample_orders;
 
 -- COMMAND ----------
+-- 108 intentionally has no lines, exercising the empty-order LEFT JOIN case.
+-- 103 and 110 resolve through delivery plus cancellation, in opposite time orders.
+-- 111 and 112 combine cancellation with Pending and Shipped respectively.
+-- The 100-unit muffin lines expose missing cancellation/date filters; the smaller
+-- bread and pastry quantities create the last-month tie checked in validation.
+-- Positional insertion follows the column order declared in 01_schema.sql.
 INSERT OVERWRITE workspace.interview_orders.order_items
 WITH lines(order_id, line_number, product_id, quantity, unit_price, line_status) AS (
   VALUES
@@ -71,6 +83,10 @@ WITH lines(order_id, line_number, product_id, quantity, unit_price, line_status)
     (112, 1, 1, 2, 7.00, 'Shipped'),
     (112, 2, 2, 3, 4.00, 'Cancelled')
 )
+-- Derive events from each header so all fulfillment events occur after placement.
+-- Missing ELSE branches produce NULL timestamps for nonmatching statuses.
+-- For 107, +1 second crosses into last month; for 103 it crosses into this month,
+-- deliberately making delivery-window membership differ from order-window membership.
 SELECT l.*,
   CASE WHEN l.line_status = 'Delivered' THEN
     CASE WHEN l.order_id = 110 THEN o.ordered_at + INTERVAL 2 SECONDS

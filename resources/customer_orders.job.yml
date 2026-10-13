@@ -2,12 +2,17 @@ resources:
   jobs:
     customer_orders:
       name: customer-orders
+      # Serialize runs of this job because each run overwrites the shared demo tables.
+      # This does not prevent another job or an interactive session from editing them.
       max_concurrent_runs: 1
+      # Dependencies enforce setup -> fixtures -> views/functions -> validation -> results.
+      # Each notebook selects UTC explicitly because tasks can use separate SQL sessions.
       tasks:
         - task_key: create_schema
           notebook_task:
             notebook_path: ../sql/01_schema.sql
             warehouse_id: ${var.warehouse_id}
+        # Replaces demo rows: this stage is intentionally destructive to prior fixture data.
         - task_key: load_sample_data
           depends_on:
             - task_key: create_schema
@@ -32,6 +37,7 @@ resources:
           notebook_task:
             notebook_path: ../sql/05_validation.sql
             warehouse_id: ${var.warehouse_id}
+        # Default dependency behavior prevents result display when validation fails.
         - task_key: show_results
           depends_on:
             - task_key: validate

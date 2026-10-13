@@ -12,16 +12,23 @@
 SET TIME ZONE 'UTC';
 
 -- COMMAND ----------
+-- One row per header, including empty orders; only Completed orders have a completion time.
 SELECT * FROM workspace.interview_orders.order_status ORDER BY order_id;
 
 -- COMMAND ----------
+-- Fixtures produce sourdough and croissant tied at 10 ordered units each.
+-- ORDER BY controls display order only; the view already retains every first-place tie.
 SELECT * FROM workspace.interview_orders.most_sold_last_month ORDER BY product_id;
 
 -- COMMAND ----------
+-- Rolling results vary with today relative to the month-anchored sample records.
+-- Compare with the calendar-month result to see how the window changes inclusion.
 SELECT * FROM workspace.interview_orders.most_sold_previous_30 ORDER BY product_id;
 
 -- COMMAND ----------
+-- Fixtures produce 104 delivered muffins, including an order placed before last month.
 SELECT * FROM workspace.interview_orders.most_delivered_last_month ORDER BY product_id;
 
 -- COMMAND ----------
+-- Use the same rolling window with delivery timestamps and Delivered lines only.
 SELECT * FROM workspace.interview_orders.most_delivered_previous_30 ORDER BY product_id;

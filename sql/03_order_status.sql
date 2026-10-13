@@ -17,19 +17,26 @@ CREATE OR REPLACE VIEW workspace.interview_orders.order_status (
   item_count COMMENT 'Number of order lines, including cancelled lines.',
   order_status COMMENT 'Derived state: Pending, InProgress, Completed or Cancelled based on all lines.',
   completed_at COMMENT 'Latest resolving delivery or cancellation timestamp when Completed; otherwise NULL.'
-) AS
+)
+COMMENT '**Type:** Non-materialized SQL view. Derives one row per order by LEFT JOIN and conditional aggregation of line items; includes empty orders. **Constraints:** no independently declared PK, FK, NOT NULL or CHECK constraints; logical uniqueness by order_id relies on valid base keys. **Rules:** Pending for empty orders or unresolved active lines all pending; Cancelled if all lines cancelled; Completed if at least one delivered and all remaining delivered/cancelled; otherwise InProgress. completed_at is set only on Completed and is the last resolving delivery/cancellation timestamp. SQL assertions validate states and completion chronology.'
+AS
+-- Reduce line-level facts to one row per order before applying status precedence.
 WITH item_summary AS (
   SELECT
     o.order_id,
     o.customer_id,
     o.ordered_at,
+    -- Count the child key, not COUNT(*): an empty LEFT JOIN still yields a row,
+    -- but its NULL child key must contribute zero items. Counts measure lines, not units.
     count(i.line_number) AS item_count,
     count_if(i.line_status = 'Delivered') AS delivered_count,
     count_if(i.line_status = 'Cancelled') AS cancelled_count,
     count_if(i.line_status = 'Pending') AS pending_count,
+    -- MAX ignores missing events and retains the latest event of each kind.
     max(i.delivered_at) AS last_delivered_at,
     max(i.cancelled_at) AS last_cancelled_at
   FROM workspace.interview_orders.orders o
+  -- Keep headers with no items; an INNER JOIN would silently remove order 108.
   LEFT JOIN workspace.interview_orders.order_items i ON i.order_id = o.order_id
   GROUP BY o.order_id, o.customer_id, o.ordered_at
 )
@@ -59,6 +66,3 @@ SELECT
     -- With no ELSE, unfinished orders also return NULL.
   END AS completed_at
 FROM item_summary;
-
--- COMMAND ----------
-COMMENT ON TABLE workspace.interview_orders.order_status IS '**Type:** Non-materialized SQL view. Derives one row per order by LEFT JOIN and conditional aggregation of line items; includes empty orders. **Constraints:** no independently declared PK, FK, NOT NULL or CHECK constraints; logical uniqueness by order_id relies on valid base keys. **Rules:** Pending for empty orders or unresolved active lines all pending; Cancelled if all lines cancelled; Completed if at least one delivered and all remaining delivered/cancelled; otherwise InProgress. completed_at is set only on Completed and is the last resolving delivery/cancellation timestamp. SQL assertions validate states and completion chronology.';

@@ -11,6 +11,10 @@
 SET TIME ZONE 'UTC';
 
 -- COMMAND ----------
+-- Run against the complete fixture set, not an arbitrary production dataset.
+-- The checks assert selected examples and invariants; they are not exhaustive proofs.
+-- Invalid function arguments are rejected by the functions but are not invoked here,
+-- because their expected errors would stop this success-path validation job.
 -- CHECK 1: calendar months and 30-day windows are different business definitions.
 -- January must reach December of the previous year. A calendar February spans
 -- 29 days in 2024 and 28 in 2025; neither should be approximated as 30 days.

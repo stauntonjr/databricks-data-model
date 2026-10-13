@@ -13,6 +13,9 @@ SET TIME ZONE 'UTC';
 
 -- COMMAND ----------
 -- Shared date-window logic. Invalid modes and NULL dates fail explicitly.
+-- Return exactly one boundary row for valid inputs, allowing a CROSS JOIN to attach
+-- the same window to every candidate event without multiplying its quantity.
+-- Casting dates to TIMESTAMP_NTZ produces midnight boundaries in the UTC convention.
 CREATE OR REPLACE FUNCTION workspace.interview_orders.reporting_window(
   window_kind STRING, as_of_date DATE
 )
@@ -20,12 +23,14 @@ RETURNS TABLE (window_start TIMESTAMP_NTZ, window_end TIMESTAMP_NTZ)
 COMMENT 'Reusable table-valued function returning start-inclusive/end-exclusive UTC TIMESTAMP_NTZ boundaries for last_calendar_month or previous_30_days based on as_of_date; invalid inputs raise errors. No PK, FK, NOT NULL or CHECK constraints are declared for function results.'
 RETURN
 SELECT
+  -- Both boundaries validate inputs so either projected result rejects invalid arguments.
   CAST(CASE
     WHEN as_of_date IS NULL THEN raise_error('as_of_date must not be NULL')
     WHEN window_kind = 'last_calendar_month' THEN add_months(trunc(as_of_date, 'MM'), -1)
     WHEN window_kind = 'previous_30_days' THEN date_sub(as_of_date, 30)
     ELSE raise_error('window_kind must be last_calendar_month or previous_30_days')
   END AS TIMESTAMP_NTZ) AS window_start,
+  -- Both boundaries validate inputs so either projected result rejects invalid arguments.
   CAST(CASE
     WHEN as_of_date IS NULL THEN raise_error('as_of_date must not be NULL')
     WHEN window_kind = 'last_calendar_month' THEN trunc(as_of_date, 'MM')
@@ -52,24 +57,32 @@ WITH boundaries AS (
   CROSS JOIN boundaries b
   WHERE o.ordered_at >= b.window_start
     AND o.ordered_at < b.window_end
+    -- Pending and Shipped quantities count as ordered units; cancellation is current state.
     AND i.line_status <> 'Cancelled'
   GROUP BY i.product_id
 ), ranked AS (
+  -- Rank only products with qualifying activity; no activity yields no winner rows.
+  -- Do not add product_id to this ordering: doing so would break quantity ties.
   SELECT *, dense_rank() OVER (ORDER BY units_sold DESC) AS sales_rank
   FROM product_sales
 )
 SELECT p.product_id, p.name, r.units_sold
 FROM ranked r
+-- Attach the current display name after aggregation; product keys must be unique.
 JOIN workspace.interview_orders.products p ON p.product_id = r.product_id
 WHERE r.sales_rank = 1;
 
 -- COMMAND ----------
 -- Preserve the original view for callers that always want last month.
+-- These views evaluate current_date() when queried; they do not freeze a report date.
+-- Use the functions with an explicit as_of_date for reproducible window selection.
 CREATE OR REPLACE VIEW workspace.interview_orders.most_sold_last_month (
   product_id COMMENT 'Product identifier tied for most ordered units last calendar month.',
   name COMMENT 'Product display name.',
   units_sold COMMENT 'Sum of non-cancelled ordered quantities for this product last calendar month.'
-) AS
+)
+COMMENT '**Type:** Non-materialized SQL view. Highest-volume products by ordered units for the preceding full calendar month. **Constraints:** no declared PK, FK, NOT NULL or CHECK constraints. **Rules:** order-date window [first day of previous month, first day of current month), SUM(order_items.quantity), exclude currently Cancelled lines, DENSE_RANK = 1 preserves all ties. Returns product_id, name, units_sold. Historical month-end cancellation state is not reconstructed; assertions check boundaries and ties.'
+AS
 SELECT * FROM workspace.interview_orders.most_sold_products('last_calendar_month', current_date());
 
 -- COMMAND ----------
@@ -78,7 +91,9 @@ CREATE OR REPLACE VIEW workspace.interview_orders.most_sold_previous_30 (
   product_id COMMENT 'Product identifier tied for most ordered units in previous 30 complete days.',
   name COMMENT 'Product display name.',
   units_sold COMMENT 'Sum of non-cancelled ordered quantities in previous 30 complete days.'
-) AS
+)
+COMMENT '**Type:** Non-materialized SQL view. Highest-volume products by ordered units over the previous 30 complete UTC days, excluding today. **Constraints:** no declared PK, FK, NOT NULL or CHECK constraints. **Rules:** ordered_at in [current_date - 30 days, current_date), SUM(quantity), exclude lines currently Cancelled, DENSE_RANK = 1 retains ties. Returns product_id, name, units_sold; current cancellation state is used.'
+AS
 SELECT * FROM workspace.interview_orders.most_sold_products('previous_30_days', current_date());
 
 -- COMMAND ----------
@@ -96,16 +111,20 @@ WITH boundaries AS (
   SELECT product_id, sum(quantity) AS units_delivered
   FROM workspace.interview_orders.order_items
   CROSS JOIN boundaries b
+  -- Delivery counts do not require the entire order to be Completed.
   WHERE line_status = 'Delivered'
     AND delivered_at >= b.window_start
     AND delivered_at < b.window_end
   GROUP BY product_id
 ), ranked AS (
+  -- Rank only products with qualifying activity; no activity yields no winner rows.
+  -- Do not add product_id to this ordering: doing so would break quantity ties.
   SELECT *, dense_rank() OVER (ORDER BY units_delivered DESC) AS sales_rank
   FROM product_sales
 )
 SELECT p.product_id, p.name, r.units_delivered
 FROM ranked r
+-- Attach the current display name after aggregation; product keys must be unique.
 JOIN workspace.interview_orders.products p ON p.product_id = r.product_id
 WHERE r.sales_rank = 1;
 
@@ -114,7 +133,9 @@ CREATE OR REPLACE VIEW workspace.interview_orders.most_delivered_last_month (
   product_id COMMENT 'Product identifier tied for most delivered units last calendar month.',
   name COMMENT 'Product display name.',
   units_delivered COMMENT 'Sum of quantities with Delivered status and delivery timestamp last calendar month.'
-) AS
+)
+COMMENT '**Type:** Non-materialized SQL view. Highest-volume products by delivered units in the preceding complete calendar month, independent of order placement date. **Constraints:** no declared PK, FK, NOT NULL or CHECK constraints. **Rules:** line_status = Delivered; delivered_at in [first day previous month, first day current month); SUM(quantity); DENSE_RANK = 1 returns every first-place tie. Returns product_id, name, units_delivered; SQL assertions verify delivery-date attribution.'
+AS
 SELECT * FROM workspace.interview_orders.most_delivered_products('last_calendar_month', current_date());
 
 -- COMMAND ----------
@@ -123,16 +144,7 @@ CREATE OR REPLACE VIEW workspace.interview_orders.most_delivered_previous_30 (
   product_id COMMENT 'Product identifier tied for most delivered units in previous 30 complete days.',
   name COMMENT 'Product display name.',
   units_delivered COMMENT 'Sum of quantities with Delivered status and delivery timestamp in previous 30 complete days.'
-) AS
+)
+COMMENT '**Type:** Non-materialized SQL view. Highest-volume products by delivered units in the preceding 30 complete UTC days, excluding today. **Constraints:** no declared PK, FK, NOT NULL or CHECK constraints. **Rules:** line_status = Delivered; delivered_at in [current_date - 30 days, current_date); SUM(quantity); DENSE_RANK = 1 preserves top ties. Returns product_id, name, units_delivered; delivery date, not order date, determines inclusion.'
+AS
 SELECT * FROM workspace.interview_orders.most_delivered_products('previous_30_days', current_date());
-
--- COMMAND ----------
--- Standard view descriptions in Catalog Explorer.
-COMMENT ON TABLE workspace.interview_orders.most_sold_last_month IS '**Type:** Non-materialized SQL view. Highest-volume products by ordered units for the preceding full calendar month. **Constraints:** no declared PK, FK, NOT NULL or CHECK constraints. **Rules:** order-date window [first day of previous month, first day of current month), SUM(order_items.quantity), exclude currently Cancelled lines, DENSE_RANK = 1 preserves all ties. Returns product_id, name, units_sold. Historical month-end cancellation state is not reconstructed; assertions check boundaries and ties.';
-
-COMMENT ON TABLE workspace.interview_orders.most_sold_previous_30 IS '**Type:** Non-materialized SQL view. Highest-volume products by ordered units over the previous 30 complete UTC days, excluding today. **Constraints:** no declared PK, FK, NOT NULL or CHECK constraints. **Rules:** ordered_at in [current_date - 30 days, current_date), SUM(quantity), exclude lines currently Cancelled, DENSE_RANK = 1 retains ties. Returns product_id, name, units_sold; current cancellation state is used.';
-
-COMMENT ON TABLE workspace.interview_orders.most_delivered_last_month IS '**Type:** Non-materialized SQL view. Highest-volume products by delivered units in the preceding complete calendar month, independent of order placement date. **Constraints:** no declared PK, FK, NOT NULL or CHECK constraints. **Rules:** line_status = Delivered; delivered_at in [first day previous month, first day current month); SUM(quantity); DENSE_RANK = 1 returns every first-place tie. Returns product_id, name, units_delivered; SQL assertions verify delivery-date attribution.';
-
-COMMENT ON TABLE workspace.interview_orders.most_delivered_previous_30 IS '**Type:** Non-materialized SQL view. Highest-volume products by delivered units in the preceding 30 complete UTC days, excluding today. **Constraints:** no declared PK, FK, NOT NULL or CHECK constraints. **Rules:** line_status = Delivered; delivered_at in [current_date - 30 days, current_date); SUM(quantity); DENSE_RANK = 1 preserves top ties. Returns product_id, name, units_delivered; delivery date, not order date, determines inclusion.';
-
